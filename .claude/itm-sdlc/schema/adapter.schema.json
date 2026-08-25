@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://itmagnet.com.au/itm-sdlc/schema/adapter.schema.json",
+  "title": "Language adapter",
+  "description": "Everything the toolkit knows about one language. No script, workflow or agent may hardcode a file extension, an annotation syntax or a build command; all three come from here. Adding a language means adding one file in adapters/ and one directory in rules/, and changing nothing else.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "displayName",
+    "detect",
+    "sourceGlobs",
+    "testGlobs",
+    "annotation",
+    "commands",
+    "rules"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema, for editor completion. Ignored by the loader."
+    },
+
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,23}$",
+      "description": "Stable machine identifier. Must equal the file's basename: adapters/<id>.json."
+    },
+
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "description": "Human label used in reports and CI job names."
+    },
+
+    "detect": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/glob" },
+      "description": "Globs whose presence in a project activates this adapter. Choose markers that are specific to the stack: a project file, not a source file."
+    },
+
+    "detectUnless": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/glob" },
+      "description": "Globs whose presence DEACTIVATES this adapter, even when 'detect' matched. For a marker that a more specific adapter also owns: every TypeScript project has a package.json, so the JavaScript adapter must stand down when a tsconfig.json is present, or both would run the identical commands twice. Use sparingly — a stack that genuinely needs two adapters should get both."
+    },
+
+    "sourceGlobs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/glob" },
+      "description": "Where production code lives."
+    },
+
+    "testGlobs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/glob" },
+      "description": "Where tests live. The traceability checker scans exactly these files for @covers annotations."
+    },
+
+    "ignore": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/glob" },
+      "description": "Build output and vendored directories to exclude from every scan. These are language-specific (bin/obj, node_modules, target) and therefore belong here rather than in a shared list."
+    },
+
+    "annotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern", "example"],
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "format": "regex",
+          "minLength": 1,
+          "description": "Regular expression locating a test annotation. It MUST expose exactly two capture groups: group 1 the requirement id, group 2 the version digits. Group 2 should be optional so that an annotation missing its mandatory @v is reported as a violation rather than silently ignored (CONVENTIONS.md §5)."
+        },
+        "example": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A literal annotation as written in this language. It must match `pattern`; the loader checks this."
+        }
+      }
+    },
+
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build", "test", "lint", "coverage"],
+      "description": "Shell commands run by the CI gates. The first four are required: a stack with no linter should say so explicitly rather than leave the field out.",
+      "properties": {
+        "build": { "$ref": "#/$defs/command" },
+        "test": { "$ref": "#/$defs/command" },
+        "lint": { "$ref": "#/$defs/command" },
+        "coverage": { "$ref": "#/$defs/command" },
+        "format": {
+          "$ref": "#/$defs/command",
+          "description": "Rewrite one file in place. Used by the format hook, not by CI. Include the token {file}; the hook substitutes the path. Optional: an adapter with no formatter is skipped, not failed."
+        },
+        "integration": {
+          "$ref": "#/$defs/command",
+          "description": "Integration and contract tests, run at gate G4. Optional: a project with none skips G4 rather than failing it. Kept separate from `test` because G4 runs after G1-G3 have passed, and integration suites are slow enough that ordering matters."
+        },
+        "testFiles": {
+          "$ref": "#/$defs/command",
+          "description": "Run ONLY the named test files. The selected paths are appended as arguments, space-separated, so this must be a command that accepts file paths last. Used by G2 and G4 to run a derived regression scope when the pull request declares REQ- or CHG- ids. OPTIONAL, and its absence is a supported answer, not a gap: a stack whose runner selects by fully-qualified test name rather than by file (dotnet test --filter, for one) has no honest way to express this, and the gates run the full suite instead. Never approximate it — a scoped run that silently misses tests is worse than a slow one."
+        },
+        "integrationFiles": {
+          "$ref": "#/$defs/command",
+          "description": "The same idea for gate G4's integration suite. Optional, and subject to the same rule: absent means G4 runs everything."
+        }
+      }
+    },
+
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How CI obtains this language's toolchain. GitHub Actions does not allow an expression in `uses:`, so a workflow cannot choose setup-dotnet or setup-java dynamically — but `container:` DOES accept one. Declaring the image here is therefore the only way a single gates.yml can serve any language without editing.",
+      "properties": {
+        "container": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Docker image carrying this language's toolchain, e.g. mcr.microsoft.com/dotnet/sdk:8.0. Pin a major version; do not use `latest`."
+        }
+      }
+    },
+
+    "rules": {
+      "type": "string",
+      "pattern": "^rules/[a-z][a-z0-9-]*$",
+      "description": "Repository-relative path to this language's coding rules, shipped into .claude/rules/ by the installer."
+    }
+  },
+
+  "$defs": {
+    "glob": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\\\]+$",
+      "description": "Forward-slash glob. Backslashes are rejected so that adapters behave identically on Windows and Linux."
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

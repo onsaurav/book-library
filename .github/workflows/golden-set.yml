@@ -1,0 +1,151 @@
+# golden-set — can the gauntlet still catch a known-bad change?
+#
+#   "If the gauntlet cannot catch a known-bad change, it is theatre and should
+#    be treated as such until it is fixed."
+#
+# This is the only workflow that tests the TESTING, and it is the one that goes
+# stale most quietly. Every other gate reports green when it is working and green
+# when it has silently stopped checking; this one is how you tell the difference.
+#
+# It runs:
+#   - monthly, because agent behaviour drifts under a model that was updated
+#     beneath you, with no commit anywhere to point at
+#   - on any change to an agent prompt or its declared model version
+#   - on any change to the reviewer harness, the golden set, or the runner
+#   - on demand
+#
+# Installed into client projects at .github/workflows/golden-set.yml.
+
+name: golden-set
+
+on:
+  schedule:
+    # 06:00 UTC on the first of the month. Not on the 1st at midnight: a failure
+    # nobody sees until the 3rd is a failure that taught you nothing.
+    - cron: '0 6 1 * *'
+
+  push:
+    branches: [main, master]
+    paths:
+      # An agent prompt, or the `model:` line in its frontmatter. Both live here,
+      # so this one glob covers "agent prompt or model version".
+      - 'agents/**'
+      - 'skills/**'
+      # The harness that builds the reviewer's input, and its isolation rules.
+      - 'scripts/review-change.js'
+      # The set itself, the runner, and the baseline it is judged against.
+      - 'tests/golden-set/**'
+      - 'scripts/run-golden-set.js'
+      - 'scripts/check-traceability.js'
+
+  pull_request:
+    paths:
+      - 'agents/**'
+      - 'skills/**'
+      - 'scripts/review-change.js'
+      - 'tests/golden-set/**'
+      - 'scripts/run-golden-set.js'
+      - 'scripts/check-traceability.js'
+
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: 'Rewrite the baseline from this run. Only after the drop is understood.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  detection-rate:
+    name: detection rate has not dropped
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: Run the golden set
+        id: run
+        env:
+          ITM_SDLC_REVIEWER_CMD: ${{ secrets.ITM_SDLC_REVIEWER_CMD }}
+        run: |
+          set -uo pipefail
+          node scripts/run-golden-set.js --baseline tests/golden-set/baseline.json --json > golden-set.json
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          node scripts/run-golden-set.js --baseline tests/golden-set/baseline.json || true
+
+      - name: Summary
+        if: always()
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const { summary, comparison, results } = JSON.parse(fs.readFileSync("golden-set.json", "utf8"));
+            const L = [];
+            L.push("## Golden set");
+            L.push("");
+            L.push("| | Case | Gate | Outcome |");
+            L.push("|---|---|---|---|");
+            for (const r of results) {
+              const mark = r.expectedUndetected ? "GAP" : r.caught === null ? "not judged" : r.caught ? "caught" : "**MISSED**";
+              L.push(`| ${mark} | ${r.id} | ${r.gate} | ${String(r.detail).replace(/\|/g, "\\|").slice(0, 200)} |`);
+            }
+            L.push("");
+            L.push(`**${summary.caught}/${summary.judged}** judged cases caught` +
+              (summary.detectionRate === null ? "" : ` — detection rate ${(summary.detectionRate * 100).toFixed(0)}%`));
+            if (summary.notRunnable) L.push(`${summary.notRunnable} case(s) could not be judged — no reviewer is configured, so this rate is computed from less than the whole set.`);
+            if (summary.knownGaps) L.push(`${summary.knownGaps} case(s) are known gaps with no gate at all.`);
+            if (comparison?.regressed) {
+              L.push("");
+              L.push("### Detection has regressed");
+              L.push("");
+              for (const p of comparison.problems) L.push(`- ${p}`);
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, L.join("\n") + "\n");
+          '
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: golden-set
+          path: golden-set.json
+
+      # A monthly failure that only appears in a workflow list is a failure
+      # nobody reads. Raise something a person has to close.
+      - name: Raise an issue when detection drops on a scheduled run
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh issue create --repo "${REPO}" \
+            --title "Golden set: detection rate has dropped" \
+            --label "gauntlet" \
+            --body "The monthly golden-set run caught fewer known-bad changes than the recorded baseline.
+
+          This usually means an agent prompt changed, or the model behind it moved
+          beneath us with no commit to point at.
+
+          Run: ${RUN}
+
+          Do not update the baseline to clear this. Establish what changed first;
+          the baseline records what the gauntlet could do, not what it currently does."
+
+      - name: Update the baseline (manual, deliberate)
+        if: github.event_name == 'workflow_dispatch' && inputs.update_baseline
+        run: |
+          set -euo pipefail
+          node scripts/run-golden-set.js --baseline tests/golden-set/baseline.json --update-baseline
+          echo "::notice::Baseline rewritten. Commit it with an explanation of why detection changed."
+          git diff -- tests/golden-set/baseline.json

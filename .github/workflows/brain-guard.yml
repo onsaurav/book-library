@@ -1,0 +1,109 @@
+# brain-guard — the project record may only change through a reviewed pull request.
+#
+# This is a BACKSTOP, not the control. It runs after a push has already landed,
+# so it detects a violation rather than preventing one. The primary control is
+# branch protection on the default branch requiring one approving review
+# (CONVENTIONS.md §7). If this workflow is the only thing standing between an
+# agent and the record, the record is not protected.
+#
+# What it catches: a commit that reaches the default branch, modifies .brain/,
+# and has no pull request associated with it — someone pushing straight to main,
+# by hand or by automation.
+#
+# Installed into client projects at .github/workflows/brain-guard.yml.
+
+name: brain-guard
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  write-path:
+    name: .brain/ changes must arrive via a pull request
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Every commit touching .brain/ must belong to a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Branch creation reports an all-zero "before". There is no push range
+          # to judge, and auditing the entire history on branch creation would
+          # fail every new project on its first day.
+          if [ -z "${BEFORE:-}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+            echo "::notice::Branch created or history unavailable; nothing to check."
+            exit 0
+          fi
+
+          if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "::warning::${BEFORE} is not present (force push or truncated history). Cannot verify this push."
+            exit 0
+          fi
+
+          if [ -z "$(git diff --name-only "${BEFORE}" "${AFTER}" -- .brain)" ]; then
+            echo "No .brain/ changes in this push."
+            exit 0
+          fi
+
+          echo "This push changes .brain/. Checking each commit for a pull request."
+          echo
+
+          violations=0
+
+          # --no-merges: a merge commit introduces no content of its own. The
+          # commits it brings in are checked individually, and those ARE
+          # associated with the pull request that merged them - as are the single
+          # commits produced by squash and rebase merges.
+          for sha in $(git rev-list --no-merges "${BEFORE}..${AFTER}"); do
+            touched=$(git show --pretty=format: --name-only "${sha}" -- .brain | grep -c . || true)
+            [ "${touched}" -eq 0 ] && continue
+
+            pr_count=$(gh api "repos/${REPO}/commits/${sha}/pulls" --jq 'length' 2>/dev/null || echo 0)
+            subject=$(git log -1 --pretty=%s "${sha}")
+
+            if [ "${pr_count}" -eq 0 ]; then
+              echo "::error::${sha} modifies .brain/ with no associated pull request - \"${subject}\""
+              git show --pretty=format: --name-only "${sha}" -- .brain | sed 's/^/    /'
+              violations=$((violations + 1))
+            else
+              echo "  ok  ${sha}  (${pr_count} associated PR) - ${subject}"
+            fi
+          done
+
+          echo
+          if [ "${violations}" -gt 0 ]; then
+            cat <<'EOF'
+          ::error::The project record was changed outside a reviewed pull request.
+
+          .brain/ holds the requirements, decisions and constraints this project is
+          built against. Every change to it is reviewed, without exception - not
+          because the change is likely to be wrong, but because unreviewed record
+          changes compound: one is cheap to check, a hundred unchecked are
+          unrecoverable, and afterwards nobody can tell which were judged.
+
+          Revert the commit, reapply it on a branch, and open a pull request.
+          The /checkpoint skill does this for you.
+
+          If this fired on a legitimate push, the fix is branch protection on the
+          default branch - not an exception here.
+          EOF
+            exit 1
+          fi
+
+          echo "All .brain/ changes in this push arrived through a pull request."

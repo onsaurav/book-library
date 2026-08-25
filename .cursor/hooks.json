@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "node .claude/itm-sdlc/scripts/hook-prompt-log.js capture"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "node .claude/itm-sdlc/scripts/hook-prompt-log.js record"
+      },
+      {
+        "command": "node .claude/itm-sdlc/scripts/hook-dashboard.js"
+      },
+      {
+        "command": "node .claude/itm-sdlc/scripts/hook-format.js"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "node .claude/itm-sdlc/scripts/hook-report.js"
+      }
+    ]
+  }
+}

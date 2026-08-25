@@ -1,0 +1,32 @@
+{
+  "name": "itm-sdlc",
+  "version": "1.0.0",
+  "description": "Agentic SDLC toolkit: requirement spine, project brain, context-isolated reviewer, checkpoint loop and verification gates.",
+  "license": "UNLICENSED",
+  "private": true,
+  "author": "IT Magnet",
+  "main": "index.js",
+  "bin": {
+    "itm-sdlc-install": "install.js"
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "validate": "node scripts/validate-requirements.js",
+    "traceability": "node scripts/check-traceability.js",
+    "golden-set": "node scripts/run-golden-set.js --baseline tests/golden-set/baseline.json",
+    "metrics": "node scripts/metrics.js",
+    "install-into": "node install.js"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "glob": "^13.0.6",
+    "js-yaml": "^4.3.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

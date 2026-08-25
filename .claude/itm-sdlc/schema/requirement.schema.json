@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://itmagnet.com.au/itm-sdlc/schema/requirement.schema.json",
+  "title": "Requirement file",
+  "description": "A .brain/requirements/<module>.yaml file: an array of requirement objects. Identifier patterns and the status lifecycle are frozen by CONVENTIONS.md; this schema is a transcription of that document, not an independent source of truth.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/requirement" },
+
+  "$defs": {
+    "requirementId": {
+      "type": "string",
+      "pattern": "^REQ-[A-Z]{3,8}-\\d{3}$",
+      "description": "CONVENTIONS.md §1. Never reused, renumbered or renamed once status reaches 'agreed'."
+    },
+
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "module",
+        "priority",
+        "status",
+        "version",
+        "source",
+        "acceptance"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/requirementId" },
+
+        "title": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 120,
+          "description": "One line. What the requirement demands, not how it is built."
+        },
+
+        "module": {
+          "type": "string",
+          "pattern": "^[A-Z]{3,8}$",
+          "description": "Must equal the MODULE segment of `id`, and must be a member of the project's declared module list."
+        },
+
+        "priority": {
+          "type": "string",
+          "enum": ["must", "should", "could", "wont"]
+        },
+
+        "status": {
+          "type": "string",
+          "enum": ["draft", "agreed", "in_progress", "verified", "signed_off"],
+          "description": "CONVENTIONS.md §6. Forward-only, no skipped steps. 'agreed' and beyond require zero open ambiguities; 'verified' and beyond require at least one verified_by entry."
+        },
+
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Incremented when the requirement's meaning changes. Incrementing resets status to 'draft' and appends the previous state to history."
+        },
+
+        "history": {
+          "type": "array",
+          "description": "Append-only log of superseded versions. The current version is NOT listed here.",
+          "items": { "$ref": "#/$defs/historyEntry" }
+        },
+
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where this requirement came from: a BRD section reference, a call date, a client email. Not a guess."
+        },
+
+        "rationale": {
+          "type": "string",
+          "description": "Why the requirement exists. Business reason, not implementation reason."
+        },
+
+        "acceptance": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/acceptanceCriterion" },
+          "description": "Machine-checkable acceptance criteria. A requirement with no criterion cannot be verified and must not exist."
+        },
+
+        "ambiguities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Open questions for the client, each phrased as a question. Every entry listed here is OPEN; resolved ambiguities are removed, and the resolution is recorded in the acceptance criteria it produced. A non-empty list blocks the draft -> agreed transition."
+        },
+
+        "depends_on": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/requirementId" },
+          "description": "Requirements that must hold for this one to be meaningful. Must be acyclic."
+        },
+
+        "verified_by": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Test file paths, repository-relative, holding a @covers annotation for this requirement at its current version."
+        }
+      }
+    },
+
+    "acceptanceCriterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["given", "when", "then"],
+      "properties": {
+        "given": { "type": "string", "minLength": 1, "description": "Precondition." },
+        "when": { "type": "string", "minLength": 1, "description": "Action under test." },
+        "then": { "type": "string", "minLength": 1, "description": "Observable, checkable outcome. Avoid 'works correctly'." }
+      }
+    },
+
+    "historyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "summary"],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The superseded version number."
+        },
+        "agreed": {
+          "type": ["string", "null"],
+          "format": "date",
+          "description": "ISO 8601 date on which this version reached status 'agreed', or null if it never did."
+        },
+        "superseded_by": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "The version number of this same requirement that replaced this entry. Supersession by a DIFFERENT requirement is recorded as a change record (CHG-NNNN), not here."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What this version said, and why it changed."
+        }
+      }
+    }
+  }
+}

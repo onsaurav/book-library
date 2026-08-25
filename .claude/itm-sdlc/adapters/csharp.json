@@ -1,0 +1,30 @@
+{
+  "$schema": "../schema/adapter.schema.json",
+  "id": "csharp",
+  "displayName": "C# / .NET",
+  "detect": ["**/*.csproj", "**/*.sln", "**/*.slnx"],
+  "sourceGlobs": ["**/*.cs"],
+  "testGlobs": [
+    "**/*Tests/**/*.cs",
+    "**/*.Tests/**/*.cs",
+    "**/*Tests.cs",
+    "**/*Test.cs"
+  ],
+  "ignore": ["**/bin/**", "**/obj/**", "**/TestResults/**"],
+  "annotation": {
+    "pattern": "//\\s*@covers\\s+(REQ-[A-Z]{3,8}-\\d{3})(?:@v(\\d+))?",
+    "example": "// @covers REQ-SAMPLE-001@v1"
+  },
+  "commands": {
+    "build": "dotnet build -warnaserror",
+    "test": "dotnet test --filter \"Category!=Integration\"",
+    "lint": "dotnet format --verify-no-changes",
+    "coverage": "dotnet test --collect:\"XPlat Code Coverage\"",
+    "format": "dotnet format --include {file}",
+    "integration": "dotnet test --filter \"Category=Integration\""
+  },
+  "ci": {
+    "container": "mcr.microsoft.com/dotnet/sdk:8.0"
+  },
+  "rules": "rules/csharp"
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "../schema/adapter.schema.json",
+  "id": "typescript",
+  "displayName": "TypeScript",
+  "detect": [
+    "**/tsconfig.json",
+    "**/tsconfig.*.json"
+  ],
+  "sourceGlobs": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "testGlobs": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/tests/**/*.ts",
+    "**/e2e/**/*.ts"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.next/**",
+    "**/coverage/**",
+    "**/playwright-report/**"
+  ],
+  "annotation": {
+    "pattern": "(?://\\s*@covers\\s+|type\\s*:\\s*['\"]covers['\"]\\s*,\\s*description\\s*:\\s*['\"])(REQ-[A-Z]{3,8}-\\d{3})(?:@v(\\d+))?",
+    "example": "// @covers REQ-SAMPLE-001@v1"
+  },
+  "commands": {
+    "build": "npm run build",
+    "test": "npm test",
+    "lint": "npm run lint",
+    "coverage": "npm run coverage",
+    "format": "npx --yes prettier --write {file}",
+    "integration": "npm run test:integration",
+    "testFiles": "npx vitest run",
+    "integrationFiles": "npx playwright test"
+  },
+  "ci": {
+    "container": "node:20-bookworm"
+  },
+  "rules": "rules/typescript"
+}

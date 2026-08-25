@@ -1,0 +1,36 @@
+{
+  "$schema": "../schema/adapter.schema.json",
+  "id": "python",
+  "displayName": "Python",
+  "detect": ["**/pyproject.toml", "**/setup.py", "**/setup.cfg"],
+  "sourceGlobs": ["**/*.py"],
+  "testGlobs": [
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/tests/**/*.py"
+  ],
+  "ignore": [
+    "**/__pycache__/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/.pytest_cache/**",
+    "**/dist/**",
+    "**/*.egg-info/**"
+  ],
+  "annotation": {
+    "pattern": "#\\s*@covers\\s+(REQ-[A-Z]{3,8}-\\d{3})(?:@v(\\d+))?",
+    "example": "# @covers REQ-SAMPLE-001@v1"
+  },
+  "commands": {
+    "build": "python -m compileall -q .",
+    "test": "pytest -q",
+    "lint": "ruff check .",
+    "coverage": "pytest --cov --cov-fail-under=80 -q",
+    "format": "ruff format {file}",
+    "integration": "pytest -q -m integration"
+  },
+  "ci": {
+    "container": "python:3.12-bookworm"
+  },
+  "rules": "rules/python"
+}

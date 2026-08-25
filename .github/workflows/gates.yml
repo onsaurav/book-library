@@ -1,0 +1,913 @@
+# gates — the verification gauntlet, G1 to G4.
+#
+# NOTHING IN THIS FILE NAMES A LANGUAGE. Every command, every file glob and every
+# toolchain image is read from the adapters detected in the repository. A Java
+# project is supported by adding adapters/java.json and rules/java/ — this
+# workflow is not edited, now or ever.
+#
+# That constraint is why the `detect` job exists and why the language jobs run in
+# `container:`. GitHub Actions forbids an expression in `uses:`, so a workflow
+# cannot pick setup-dotnet or setup-java at run time; `container:` does accept
+# one, so the adapter declares its own toolchain image.
+#
+# Ordering is deliberate: G1 before G2 before G3 before G4. A change that does not
+# compile should not spend twenty minutes in an integration suite before saying so.
+#
+# G1-G4 block the merge. G5-G7 are ADVISORY and carry `continue-on-error: true`,
+# so a failure inside one cannot fail the run — including a crash in the gate
+# itself. G8 collects what everything else flagged.
+#
+# Gate promotion policy: an advisory gate is promoted to blocking only after
+# running against 30 real pull requests with a measured false-positive rate below
+# the agreed threshold. Until then it reports and records. Do NOT add an advisory
+# job's check name to branch protection — that promotes it silently, without the
+# measurement the policy exists to require.
+#
+# Profile (install.js --profile) is capability, gated at runtime by the `detect`
+# job's `profile` output, read from .brain/install-state.json:
+#   spine     G0-G3, secret scan          (no G4, no G7, no drift)
+#   delivery  + G4                        (default)
+#   os        + G7, the drift job
+# G0-G3 and the secret scan are never gated — every profile gets the spine.
+#
+# Installed into client projects at .github/workflows/gates.yml.
+
+name: gates
+
+on:
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: gates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Where the toolkit's scripts/, adapters/ and schema/ live in this project.
+  ITM_SDLC_HOME: .claude/itm-sdlc
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # G0 — the change must declare what it covers.
+  #
+  # Runs before everything, and everything waits on it. A change that traces to
+  # no requirement cannot be verified against anything, and will not appear in
+  # the traceability report the client signs. Refusing that in ten seconds is
+  # kinder than refusing it after a twenty-minute build.
+  # ---------------------------------------------------------------------------
+  declaration:
+    name: G0 pull request declares what it covers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check the traceability block
+        env:
+          # Passed through the environment, never interpolated into the shell:
+          # a description is attacker-controlled text.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "${ITM_SDLC_HOME}/scripts/check-pr-declaration.js" ]; then
+            echo "::error::itm-sdlc not found at ${ITM_SDLC_HOME}."
+            exit 1
+          fi
+          ( cd "${ITM_SDLC_HOME}" && npm ci --omit=dev --no-audit --no-fund )
+
+          printf '%s' "${PR_BODY}" > pr-description.md
+          node "${ITM_SDLC_HOME}/scripts/check-pr-declaration.js" \
+            --body-file pr-description.md \
+            --labels "${PR_LABELS}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          rm -f pr-description.md
+
+  # ---------------------------------------------------------------------------
+  # Secret scan. Language-neutral, and deliberately NOT inside G1's per-adapter
+  # matrix: a credential looks the same in every language, and a defect that can
+  # appear in any change must be checked in every change.
+  #
+  # ADVISORY on arrival, per the gate promotion policy. Promote it to blocking
+  # once its false-positive rate has been measured over 30 real pull requests —
+  # a scanner that cries wolf gets the whole gauntlet resented.
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: secret scan (advisory)
+    needs: declaration
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Scan for committed credentials
+        env:
+          # Point this at gitleaks or trufflehog for a stronger scan. Left unset,
+          # the toolkit's own scanner runs, so a project is never defenceless.
+          SECRET_SCAN_CMD: ${{ vars.ITM_SDLC_SECRET_SCAN_CMD }}
+        run: |
+          set -uo pipefail
+          mkdir -p gate-findings
+          ARGS="--project . --advisory --json"
+          [ -n "${SECRET_SCAN_CMD}" ] && ARGS="${ARGS} --command \"${SECRET_SCAN_CMD}\""
+          eval node "${ITM_SDLC_HOME}/scripts/check-secrets.js" ${ARGS} > gate-findings/secrets.json || true
+          node "${ITM_SDLC_HOME}/scripts/check-secrets.js" --project . --advisory || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gate-findings-secrets
+          path: gate-findings/secrets.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Change drift. Advisory, language-neutral — runs once, not per adapter, same
+  # pattern and dependency position as the secret scan.
+  #
+  # scripts/check-drift.js reuses check-traceability.js's own stale-version
+  # verdict rather than recomputing it: two independent implementations of the
+  # same fact could disagree. It adds two things G3 does not check at all:
+  # version bumps with no CHG-NNNN anywhere in history, and an 'agreed'
+  # requirement — a floor earlier than G3's in_progress — with no
+  # implementation annotation anywhere in the codebase.
+  #
+  # Not part of G8's human-review scope, same as the secret scan: G8 curates
+  # G5-G7's judgement calls specifically. This reports independently.
+  #
+  # Ships from the 'os' profile only, same tier as G7 (Step 13) — needs
+  # `detect` only for its profile output, not its adapter matrix.
+  # ---------------------------------------------------------------------------
+  drift:
+    name: change drift (advisory)
+    needs: [declaration, detect]
+    if: needs.detect.outputs.profile == 'os'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Report drift between the requirement record and the codebase
+        run: |
+          set -uo pipefail
+          mkdir -p gate-findings
+
+          if [ ! -f "${ITM_SDLC_HOME}/scripts/check-drift.js" ]; then
+            echo "::warning::itm-sdlc not found at ${ITM_SDLC_HOME} - drift could not run."
+            printf '%s' '{"gate":"drift","mode":"advisory","status":"not-installed","total":0}' > gate-findings/drift.json
+            exit 0
+          fi
+
+          ( cd "${ITM_SDLC_HOME}" && npm ci --omit=dev --no-audit --no-fund )
+
+          node "${ITM_SDLC_HOME}/scripts/check-drift.js" --project . --json > drift-raw.json || true
+          node -e 'const fs=require("fs");let ok=true,total=0;try{const r=JSON.parse(fs.readFileSync("drift-raw.json","utf8"));ok=r.ok;total=r.total;}catch{ok=false;}fs.writeFileSync("gate-findings/drift.json",JSON.stringify({gate:"drift",mode:"advisory",status:ok?"clean":"findings",total}));'
+          node "${ITM_SDLC_HOME}/scripts/check-drift.js" --project . || true
+          rm -f drift-raw.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gate-findings-drift
+          path: gate-findings/drift.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Which languages is this repository actually built in?
+  # ---------------------------------------------------------------------------
+  detect:
+    name: detect adapters
+    needs: declaration
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+      count: ${{ steps.detect.outputs.count }}
+      integration_count: ${{ steps.detect.outputs.integration_count }}
+      profile: ${{ steps.profile.outputs.profile }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Profile gates G4, G7 and the drift job below (PDF §12: small jobs use
+      # the spine profile — requirements + reviewer + G0-G3, not the full
+      # gauntlet). Read from the state the installer writes; default to
+      # 'delivery' — today's un-profiled behaviour — when it is absent, which
+      # only happens on a project installed before --profile existed.
+      - name: Read the installed profile
+        id: profile
+        run: |
+          set -euo pipefail
+          profile=$(node -e '
+            try {
+              const state = JSON.parse(require("fs").readFileSync(".brain/install-state.json", "utf8"));
+              process.stdout.write(state.profile || "delivery");
+            } catch {
+              process.stdout.write("delivery");
+            }
+          ')
+          echo "profile=${profile}" >> "$GITHUB_OUTPUT"
+
+      - name: Preflight — the toolkit must be present
+        run: |
+          set -euo pipefail
+          if [ ! -f "${ITM_SDLC_HOME}/scripts/lib/adapters.js" ]; then
+            echo "::error::itm-sdlc not found at ${ITM_SDLC_HOME}."
+            echo "The gates read every command from the toolkit's adapters, so they cannot run without it."
+            echo "Re-run the installer against this project, or set ITM_SDLC_HOME to where it lives."
+            exit 1
+          fi
+          ( cd "${ITM_SDLC_HOME}" && npm ci --omit=dev --no-audit --no-fund )
+
+      - name: Detect
+        id: detect
+        run: |
+          set -euo pipefail
+          node -e '
+            const path = require("path");
+            const home = path.resolve(process.env.ITM_SDLC_HOME);
+            const { loadAdapters, detectAdapters } = require(path.join(home, "scripts/lib/adapters.js"));
+
+            const detected = detectAdapters(process.cwd(), loadAdapters({
+              dir: path.join(home, "adapters"),
+              schemaPath: path.join(home, "schema/adapter.schema.json"),
+            }));
+
+            const matrix = detected.map((a) => ({
+              id: a.id,
+              name: a.displayName,
+              container: a.ci?.container ?? "node:20-bookworm",
+              lint: a.commands.lint,
+              build: a.commands.build,
+              test: a.commands.test,
+              coverage: a.commands.coverage,
+              integration: a.commands.integration ?? "",
+              // Empty when the stack cannot honestly run a named subset of
+              // tests: G2 and G4 then run everything rather than approximating.
+              testFiles: a.commands.testFiles ?? "",
+              integrationFiles: a.commands.integrationFiles ?? "",
+            }));
+
+            const out = process.env.GITHUB_OUTPUT;
+            const fs = require("fs");
+            fs.appendFileSync(out, `matrix=${JSON.stringify(matrix)}\n`);
+            fs.appendFileSync(out, `count=${matrix.length}\n`);
+            fs.appendFileSync(out, `integration_count=${matrix.filter((m) => m.integration).length}\n`);
+
+            const summary = process.env.GITHUB_STEP_SUMMARY;
+            fs.appendFileSync(summary, "## Detected adapters\n\n");
+            if (matrix.length === 0) {
+              fs.appendFileSync(summary, "**None.** No adapter matched this repository, so no language gate can run.\n");
+            } else {
+              fs.appendFileSync(summary, "| Adapter | Toolchain | Integration suite |\n|---|---|---|\n");
+              for (const m of matrix) {
+                fs.appendFileSync(summary, `| ${m.name} | \`${m.container}\` | ${m.integration ? "yes" : "not declared"} |\n`);
+              }
+            }
+          '
+
+      - name: Fail if nothing was detected
+        if: steps.detect.outputs.count == '0'
+        run: |
+          echo "::error::No language adapter matched this repository."
+          echo "G1, G2 and G4 would pass without running anything, which is worse than failing."
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # G1 — lint and build. Fails fastest, so it runs first.
+  # ---------------------------------------------------------------------------
+  g1-lint-build:
+    name: G1 lint + build (${{ matrix.adapter.name }})
+    needs: detect
+    runs-on: ubuntu-latest
+    container: ${{ matrix.adapter.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        adapter: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint
+        id: lint
+        run: ${{ matrix.adapter.lint }}
+
+      - name: Build
+        id: build
+        run: ${{ matrix.adapter.build }}
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## G1 — lint + build · ${{ matrix.adapter.name }}"
+            echo
+            echo "| Step | Command | Result |"
+            echo "|---|---|---|"
+            echo "| lint | \`${{ matrix.adapter.lint }}\` | ${{ steps.lint.outcome }} |"
+            echo "| build | \`${{ matrix.adapter.build }}\` | ${{ steps.build.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # G2 — unit tests and coverage.
+  # ---------------------------------------------------------------------------
+  g2-unit-tests:
+    name: G2 unit tests (${{ matrix.adapter.name }})
+    needs: [detect, g1-lint-build]
+    runs-on: ubuntu-latest
+    container: ${{ matrix.adapter.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        adapter: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Derived regression scope (PDF §06). Four conditions must ALL hold or
+      # the full suite runs: the PR declares ids, the selector runs, it returns
+      # files, and this adapter can honestly run a named subset. Anything else
+      # is a fallback with a stated reason — never a silent narrowing.
+      - name: Select regression scope
+        id: scope
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          TEST_FILES_CMD: ${{ matrix.adapter.testFiles }}
+        run: |
+          set -uo pipefail
+          # Every early exit writes all three keys, so no key is ever written
+          # twice. Relying on "the last value wins" would work today and be
+          # invisible the day it stopped.
+          say() { { echo "files="; echo "count=0"; echo "reason=$1"; } >> "$GITHUB_OUTPUT"; }
+
+          if [ -z "${TEST_FILES_CMD}" ]; then
+            say "this adapter has no commands.testFiles - it cannot run a named subset"
+            exit 0
+          fi
+          if [ ! -f "${ITM_SDLC_HOME}/scripts/regression-select.js" ]; then
+            say "vendored toolkit predates regression-select.js"
+            exit 0
+          fi
+
+          printf '%s' "${PR_BODY}" > pr-body.md
+          ids=$(grep -oE '\b(REQ-[A-Z]{3,8}-[0-9]{3}|CHG-[0-9]{4})\b' pr-body.md | sort -u | tr '\n' ' ')
+          rm -f pr-body.md
+
+          if [ -z "${ids}" ]; then
+            say "the pull request declares no REQ- or CHG- ids"
+            exit 0
+          fi
+
+          ( cd "${ITM_SDLC_HOME}" && npm ci --omit=dev --no-audit --no-fund ) >/dev/null 2>&1 || true
+
+          if ! files=$(node "${ITM_SDLC_HOME}/scripts/regression-select.js" ${ids} --project . --files 2>selector-err.txt); then
+            say "the selector could not run: $(tr '\n' ' ' < selector-err.txt | cut -c1-160)"
+            rm -f selector-err.txt
+            exit 0
+          fi
+          rm -f selector-err.txt
+
+          count=$(printf '%s' "${files}" | grep -c . || true)
+          if [ "${count}" -eq 0 ]; then
+            say "the selector derived no test files for ${ids}"
+            exit 0
+          fi
+
+          {
+            echo "files=$(printf '%s' "${files}" | tr '\n' ' ')"
+            echo "count=${count}"
+            echo "reason=derived from ${ids}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests
+        id: test
+        run: |
+          if [ "${{ steps.scope.outputs.count }}" -gt 0 ]; then
+            echo "Scoped run: ${{ steps.scope.outputs.count }} file(s)."
+            ${{ matrix.adapter.testFiles }} ${{ steps.scope.outputs.files }}
+          else
+            echo "Full suite: ${{ steps.scope.outputs.reason }}."
+            ${{ matrix.adapter.test }}
+          fi
+
+      # The 80% floor is configured in the project's own coverage tooling, not
+      # asserted here — no single parser can read every language's report format.
+      # This step fails when that configured threshold is breached.
+      #
+      # DELIBERATELY NEVER SCOPED. Coverage is a property of the whole codebase;
+      # measuring it over a derived subset would report a number that means
+      # something else entirely, and the floor would quietly stop being enforced.
+      # Scoping the test step alone still helps: the suite is paid for once here
+      # rather than twice.
+      - name: Coverage
+        id: coverage
+        run: ${{ matrix.adapter.coverage }}
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## G2 — unit tests · ${{ matrix.adapter.name }}"
+            echo
+            if [ "${{ steps.scope.outputs.count }}" -gt 0 ]; then
+              echo "**scoped: ${{ steps.scope.outputs.count }} file(s)** — ${{ steps.scope.outputs.reason }}"
+            else
+              echo "**full suite** — ${{ steps.scope.outputs.reason }}"
+            fi
+            echo
+            echo "| Step | Result |"
+            echo "|---|---|"
+            echo "| tests | ${{ steps.test.outcome }} |"
+            echo "| coverage | ${{ steps.coverage.outcome }} |"
+            echo
+            echo "Coverage runs over the whole codebase whichever path the tests took —"
+            echo "a coverage figure derived from a subset would not mean what it says."
+            echo "The 80% floor is enforced by this project's own coverage configuration."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # G3 — traceability. Language-neutral, so it runs once rather than per adapter.
+  # ---------------------------------------------------------------------------
+  g3-traceability:
+    name: G3 traceability
+    needs: [detect, g1-lint-build, g2-unit-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install toolkit dependencies
+        run: ( cd "${ITM_SDLC_HOME}" && npm ci --omit=dev --no-audit --no-fund )
+
+      - name: Validate the requirement record
+        id: validate
+        run: node "${ITM_SDLC_HOME}/scripts/validate-requirements.js"
+
+      - name: Constraint expiry
+        id: constraints
+        continue-on-error: true
+        run: node "${ITM_SDLC_HOME}/scripts/check-constraints.js" --project .
+
+      - name: Traceability
+        id: traceability
+        run: |
+          set -euo pipefail
+          node "${ITM_SDLC_HOME}/scripts/check-traceability.js" --strict --json > traceability.json || status=$?
+          node "${ITM_SDLC_HOME}/scripts/check-traceability.js" --strict || true
+          exit "${status:-0}"
+
+      - name: Summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -f traceability.json ]; then
+            echo "## G3 — traceability" >> "$GITHUB_STEP_SUMMARY"
+            echo "The checker did not produce a report." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            const r = JSON.parse(fs.readFileSync("traceability.json", "utf8"));
+            const L = [];
+            L.push("## G3 — traceability");
+            L.push("");
+            L.push(`Adapters: ${r.adapters.join(", ") || "none"} · ${r.scannedFileCount} test file(s) · ${r.annotationCount} annotation(s)`);
+            L.push("");
+            L.push(`Coverage: **${r.coverage.covered}/${r.coverage.requiringCoverage}** requirements at in_progress or beyond are annotated.`);
+            L.push("");
+            if (r.findings.length === 0) {
+              L.push("No orphans.");
+            } else {
+              L.push("| Class | Requirement | Location | Detail |");
+              L.push("|---|---|---|---|");
+              for (const f of r.findings) {
+                const where = f.file ? `${f.file}${f.line ? ":" + f.line : ""}` : "—";
+                L.push(`| ${f.code} | ${f.id ?? "—"} | \`${where}\` | ${f.message.replace(/\|/g, "\\|")} |`);
+              }
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, L.join("\n") + "\n");
+          '
+
+      - name: Upload traceability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traceability
+          path: traceability.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # G4 — integration and contract tests. Slowest, so it runs last.
+  #
+  # Ships from the 'delivery' profile up; the 'spine' profile is deliberately
+  # G0-G3 only (small jobs, spikes — PDF §12).
+  # ---------------------------------------------------------------------------
+  g4-integration:
+    name: G4 integration (${{ matrix.adapter.name }})
+    needs: [detect, g1-lint-build, g2-unit-tests, g3-traceability]
+    if: needs.detect.outputs.integration_count != '0' && needs.detect.outputs.profile != 'spine'
+    runs-on: ubuntu-latest
+    container: ${{ matrix.adapter.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        adapter: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same four conditions as G2, against commands.integrationFiles. Any one
+      # unmet runs the whole integration suite, with the reason stated.
+      - name: Select regression scope
+        id: scope
+        if: matrix.adapter.integration != ''
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          INTEGRATION_FILES_CMD: ${{ matrix.adapter.integrationFiles }}
+        run: |
+          set -uo pipefail
+          # Every early exit writes all three keys, so no key is ever written
+          # twice. Relying on "the last value wins" would work today and be
+          # invisible the day it stopped.
+          say() { { echo "files="; echo "count=0"; echo "reason=$1"; } >> "$GITHUB_OUTPUT"; }
+
+          if [ -z "${INTEGRATION_FILES_CMD}" ]; then
+            say "this adapter has no commands.integrationFiles - it cannot run a named subset"
+            exit 0
+          fi
+          if [ ! -f "${ITM_SDLC_HOME}/scripts/regression-select.js" ]; then
+            say "vendored toolkit predates regression-select.js"
+            exit 0
+          fi
+
+          printf '%s' "${PR_BODY}" > pr-body.md
+          ids=$(grep -oE '\b(REQ-[A-Z]{3,8}-[0-9]{3}|CHG-[0-9]{4})\b' pr-body.md | sort -u | tr '\n' ' ')
+          rm -f pr-body.md
+
+          if [ -z "${ids}" ]; then
+            say "the pull request declares no REQ- or CHG- ids"
+            exit 0
+          fi
+
+          ( cd "${ITM_SDLC_HOME}" && npm ci --omit=dev --no-audit --no-fund ) >/dev/null 2>&1 || true
+
+          if ! files=$(node "${ITM_SDLC_HOME}/scripts/regression-select.js" ${ids} --project . --files 2>selector-err.txt); then
+            say "the selector could not run: $(tr '\n' ' ' < selector-err.txt | cut -c1-160)"
+            rm -f selector-err.txt
+            exit 0
+          fi
+          rm -f selector-err.txt
+
+          count=$(printf '%s' "${files}" | grep -c . || true)
+          if [ "${count}" -eq 0 ]; then
+            say "the selector derived no test files for ${ids}"
+            exit 0
+          fi
+
+          {
+            echo "files=$(printf '%s' "${files}" | tr '\n' ' ')"
+            echo "count=${count}"
+            echo "reason=derived from ${ids}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Integration and contract tests
+        id: integration
+        if: matrix.adapter.integration != ''
+        run: |
+          if [ "${{ steps.scope.outputs.count }}" -gt 0 ]; then
+            echo "Scoped run: ${{ steps.scope.outputs.count }} file(s)."
+            ${{ matrix.adapter.integrationFiles }} ${{ steps.scope.outputs.files }}
+          else
+            echo "Full suite: ${{ steps.scope.outputs.reason }}."
+            ${{ matrix.adapter.integration }}
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## G4 — integration · ${{ matrix.adapter.name }}"
+            echo
+            if [ -z "${{ matrix.adapter.integration }}" ]; then
+              echo "No integration command declared for this adapter — skipped."
+            elif [ "${{ steps.scope.outputs.count }}" -gt 0 ]; then
+              echo "**scoped: ${{ steps.scope.outputs.count }} file(s)** — ${{ steps.scope.outputs.reason }}"
+              echo
+              echo "| Result |"
+              echo "|---|"
+              echo "| ${{ steps.integration.outcome }} |"
+            else
+              echo "**full suite** — ${{ steps.scope.outputs.reason }}"
+              echo
+              echo "| Command | Result |"
+              echo "|---|---|"
+              echo "| \`${{ matrix.adapter.integration }}\` | ${{ steps.integration.outcome }} |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ===========================================================================
+  # ADVISORY GATES — G5, G6, G7
+  #
+  # Every job below carries `continue-on-error: true`. None of them can fail this
+  # workflow, however they exit and however badly they break.
+  #
+  # Each writes gate-findings/<gate>.json in a common shape so that G8 can
+  # aggregate them and, later, scripts/metrics.js can compute a false-positive
+  # rate from the accept/override decisions recorded against them.
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # G5 — visual regression. Advisory, and OPT-IN.
+  #
+  # No vision-model judge ships here, deliberately — that is real, ongoing
+  # cost paid by every project, including the many with no UI at all. This is
+  # the gate SLOT: it runs a command the project declares
+  # (ITM_SDLC_VISUAL_CMD), and reports status "not-configured" until one
+  # exists, so a project with no visual coverage is never mistaken for one
+  # that passed. Relevant only to UI work — a backend-only or CLI project
+  # should expect this to read not-configured forever, and that is correct,
+  # not a gap to close.
+  #
+  # Accessibility checks (axe, contrast) are a candidate for a future opt-in
+  # adapter alongside this one, the same shape — never an always-on gate every
+  # project pays for regardless of whether it has a UI to check.
+  # ---------------------------------------------------------------------------
+  g5-visual-regression:
+    name: G5 visual regression (advisory, opt-in)
+    needs: [detect, g1-lint-build]
+    if: always()
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the project's visual regression command
+        env:
+          VISUAL_CMD: ${{ vars.ITM_SDLC_VISUAL_CMD }}
+        run: |
+          set -uo pipefail
+          mkdir -p gate-findings
+          if [ -z "${VISUAL_CMD}" ]; then
+            echo "::notice::G5 (visual regression) is opt-in - no ITM_SDLC_VISUAL_CMD set, so there is nothing to run. Expected for a project with no UI, or one that has not configured this yet."
+            printf '%s' '{"gate":"G5","mode":"advisory","status":"not-configured","findings":[]}' > gate-findings/g5.json
+            exit 0
+          fi
+          set +e
+          eval "${VISUAL_CMD}" 2>&1 | tee g5-output.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          node -e 'const fs=require("fs");const failed=Number(process.argv[1])!==0;fs.writeFileSync("gate-findings/g5.json",JSON.stringify({gate:"G5",mode:"advisory",status:failed?"differences-found":"clean",findings:failed?[{id:"G5-1",severity:"advisory",message:"Visual differences were reported. Review the diff images in this run's artefacts and decide whether the change was intended."}]:[]}));' "${status}"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gate-findings-g5
+          path: gate-findings/g5.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # G6 — brand audit. Advisory, and OPT-IN — same shape as G5.
+  #
+  # No vision-model brand judge ships here, deliberately. This is the gate
+  # SLOT: it runs a command the project declares (ITM_SDLC_BRAND_CMD), and
+  # reports status "not-configured" until one exists. Relevant only to UI
+  # work — expect not-configured forever on a backend-only or CLI project,
+  # and treat that as correct, not a gap.
+  # ---------------------------------------------------------------------------
+  g6-brand-audit:
+    name: G6 brand audit (advisory, opt-in)
+    needs: [detect, g1-lint-build]
+    if: always()
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the project's brand audit command
+        env:
+          BRAND_CMD: ${{ vars.ITM_SDLC_BRAND_CMD }}
+        run: |
+          set -uo pipefail
+          mkdir -p gate-findings
+          if [ -z "${BRAND_CMD}" ]; then
+            echo "::notice::G6 (brand audit) is opt-in - no ITM_SDLC_BRAND_CMD set, so there is nothing to run. Expected for a project with no UI, or one that has not configured this yet."
+            printf '%s' '{"gate":"G6","mode":"advisory","status":"not-configured","findings":[]}' > gate-findings/g6.json
+            exit 0
+          fi
+          set +e
+          eval "${BRAND_CMD}" > g6-raw.json 2> g6-error.txt
+          status=$?
+          set -e
+          node -e 'const fs=require("fs");let findings=[];let ok=Number(process.argv[1])===0;try{findings=JSON.parse(fs.readFileSync("g6-raw.json","utf8")).findings??[];}catch{ok=false;}fs.writeFileSync("gate-findings/g6.json",JSON.stringify({gate:"G6",mode:"advisory",status:ok?(findings.length?"violations-found":"clean"):"errored",findings}));' "${status}"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gate-findings-g6
+          path: gate-findings/g6.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # G7 — conformance judge. Advisory.
+  #
+  # This one is real: scripts/review-change.js gives the adversarial reviewer the
+  # diff and the requirements the pull request claims to cover, and nothing else.
+  # Blocking findings are RECORDED here, not enforced - G7 stays advisory until
+  # its false-positive rate has been measured.
+  #
+  # PF-004: review-change.js ships a default invoker of its own now, and this
+  # step no longer short-circuits on a missing secret. It always runs the
+  # script; the script resolves --invoker, then $ITM_SDLC_REVIEWER_CMD, then a
+  # default headless `claude -p` when that binary is on PATH (add a step above
+  # this one to install it, if this project wants that on by default). The
+  # secret below is an OVERRIDE for a different Claude Code version, a wrapper,
+  # or a non-Claude reviewer entirely - it is not the only path to a working G7.
+  # If none of those resolve, review-change.js itself records
+  # status:not-configured and exits 0 - it never invents a finding to fill the
+  # gap.
+  #
+  # Ships from the 'os' profile only, which is OPT-IN: G7 has not yet run on a
+  # real pull request, so a delivery repository is not required to enable it.
+  #
+  # GETTING A REVIEWER ONTO A GITHUB-HOSTED RUNNER — ONE SUPPORTED WAY
+  #
+  #   Set the repository secret ITM_SDLC_REVIEWER_CMD to a command that reads a
+  #   prompt on stdin and writes findings JSON to stdout. Whatever credential it
+  #   needs belongs in that command or in secrets it reads — never echoed, never
+  #   passed on a command line another step logs.
+  #
+  # Installing the Claude CLI in this job so the DEFAULT `claude -p` resolves is
+  # deliberately NOT done here. It needs an API key at run time, and the safe
+  # ways to supply one are the same repository secret above — so it buys nothing
+  # and adds a install step that can fail. Add it yourself only if your runner
+  # can hold that credential without it reaching a log.
+  #
+  # A repository with neither still merges. That is what advisory means: the
+  # summary below records `not-configured`, and nothing blocks.
+  # ---------------------------------------------------------------------------
+  g7-conformance:
+    name: G7 conformance judge (advisory)
+    needs: [detect, g1-lint-build]
+    if: always() && needs.detect.outputs.profile == 'os'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Review the change against the requirements it claims to cover
+        env:
+          # An override, not the only path to a working G7 - see the note above.
+          ITM_SDLC_REVIEWER_CMD: ${{ secrets.ITM_SDLC_REVIEWER_CMD }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -uo pipefail
+          mkdir -p gate-findings
+
+          if [ ! -f "${ITM_SDLC_HOME}/scripts/review-change.js" ]; then
+            echo "::warning::itm-sdlc not found at ${ITM_SDLC_HOME} - G7 could not run."
+            printf '%s' '{"gate":"G7","mode":"advisory","status":"not-installed","findings":[]}' > gate-findings/g7.json
+            exit 0
+          fi
+
+          ( cd "${ITM_SDLC_HOME}" && npm ci --omit=dev --no-audit --no-fund )
+
+          # The description is written to a file and scanned for REQ ids ONLY.
+          # review-change.js discards its prose, which is where a plan would be.
+          printf '%s' "${PR_BODY}" > pr-description.md
+
+          set +e
+          node "${ITM_SDLC_HOME}/scripts/review-change.js" --base "${BASE}" --head "${HEAD}" --pr-description pr-description.md --out review-findings.json
+          status=$?
+          set -e
+
+          # review-change.js's own output.status is the source of truth here:
+          # "not-configured" means nothing above resolved to a reviewer (fine,
+          # advisory), anything else non-zero is a genuine harness failure.
+          node -e 'const fs=require("fs");const status=Number(process.argv[1]);let findings=[];let state="clean";let resolver="unknown";try{const out=JSON.parse(fs.readFileSync("review-findings.json","utf8"));findings=out.findings??[];resolver=out.resolver??"unknown";state=out.status==="not-configured"?"not-configured":findings.some(f=>f.severity==="blocking")?"blocking-findings":(findings.length?"findings":"clean");}catch{state=status===2?"harness-error":"no-output";}fs.writeFileSync("gate-findings/g7.json",JSON.stringify({gate:"G7",mode:"advisory",status:state,resolver,findings}));' "${status}"
+
+          rm -f pr-description.md
+
+      # Which link in the resolution chain supplied the reviewer. Without this a
+      # `not-configured` run is indistinguishable from a broken one, and PF-004
+      # sat open partly because nobody could tell which had happened.
+      #
+      # Reads the NAME only. The prompt body and the invoker command are never
+      # touched here — the command can carry a key, and a job summary is as
+      # readable as the build log.
+      - name: Report which reviewer resolved
+        if: always()
+        run: |
+          set -uo pipefail
+          resolver=$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync("gate-findings/g7.json","utf8")).resolver??"unknown"))}catch{process.stdout.write("unknown")}')
+          status=$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync("gate-findings/g7.json","utf8")).status??"unknown"))}catch{process.stdout.write("unknown")}')
+
+          case "${resolver}" in
+            invoker)        how="--invoker, passed to the script explicitly" ;;
+            env)            how="the ITM_SDLC_REVIEWER_CMD repository secret" ;;
+            default-claude) how="the built-in default, 'claude -p' on PATH" ;;
+            disabled)       how="deliberately disabled (ITM_SDLC_REVIEWER_CMD set empty)" ;;
+            not-configured) how="nothing resolved — no secret set, and no claude binary on PATH" ;;
+            *)              how="could not be determined; see the g7 artefact" ;;
+          esac
+
+          {
+            echo "## G7 — conformance judge (advisory)"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| resolver | \`${resolver}\` |"
+            echo "| supplied by | ${how} |"
+            echo "| result | \`${status}\` |"
+            echo
+            if [ "${resolver}" = "not-configured" ]; then
+              echo "**No reviewer ran, and nothing is blocked.** To turn G7 on, set the"
+              echo "repository secret \`ITM_SDLC_REVIEWER_CMD\` to a command that reads a"
+              echo "prompt on stdin and writes findings JSON on stdout."
+              echo
+              echo "A developer can also run the reviewer locally, on a machine where the"
+              echo "\`claude\` binary exists — see \`/verifyReq\`, section 6."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gate-findings-g7
+          path: gate-findings/g7.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # G8 — human review, scoped to what G1-G7 actually flagged.
+  #
+  # The point is subtraction. A reviewer asked to read everything reads nothing
+  # carefully; a reviewer handed the few things the machines could not settle
+  # spends their judgement where judgement is the only thing that works.
+  # ---------------------------------------------------------------------------
+  g8-human-review:
+    name: G8 human review scope
+    needs: [detect, g1-lint-build, g2-unit-tests, g3-traceability, g4-integration, g5-visual-regression, g6-brand-audit, g7-conformance]
+    if: always()
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gate-findings-*
+          path: gate-findings
+          merge-multiple: true
+
+      - name: Assemble the review scope
+        env:
+          G1: ${{ needs.g1-lint-build.result }}
+          G2: ${{ needs.g2-unit-tests.result }}
+          G3: ${{ needs.g3-traceability.result }}
+          G4: ${{ needs.g4-integration.result }}
+        run: |
+          set -euo pipefail
+          node "${ITM_SDLC_HOME}/scripts/gate-scope.js" gate-findings g8-comment.md
+
+      - name: Post the review scope on the pull request
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr comment "${PR}" --repo "${REPO}" --body-file g8-comment.md --edit-last --create-if-none
+
+      - name: Upload the aggregated findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-findings-aggregate
+          path: gate-findings/
+          if-no-files-found: ignore
