@@ -1,0 +1,129 @@
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+  font-family: system-ui, sans-serif;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.book-card {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 1rem;
+  margin: 0;
+}
+
+.book-card-field {
+  margin: 0.25rem 0;
+}
+
+.empty-library {
+  grid-column: 1 / -1;
+}
+
+.button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.button-primary {
+  background: #1a56db;
+  color: #fff;
+  border-color: #1a56db;
+}
+
+.button-delete {
+  background: #fff;
+  border-color: #b00020;
+  color: #b00020;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #1a56db;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.modal-dialog {
+  position: relative;
+  background: #fff;
+  padding: 1.5rem;
+  border-radius: 4px;
+  width: min(90vw, 420px);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.field-hint {
+  font-weight: normal;
+  color: #555;
+}
+
+.form-error {
+  color: #b00020;
+  min-height: 1em;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+@media (max-width: 480px) {
+  .modal-dialog {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+}

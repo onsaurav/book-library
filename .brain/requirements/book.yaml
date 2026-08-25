@@ -105,7 +105,9 @@
   title: Each book card carries a Delete control for that Book
   module: BOOK
   priority: must
-  status: agreed
+  status: verified
+  verified_by:
+    - tests/book/gallery-delete-control.spec.js
   version: 1
   source: >-
     Client brief, sentence 2 (BRIEF.md): "along with a Delete option"; and
@@ -132,7 +134,9 @@
   title: The home page carries a button labelled "+ Add Book"
   module: BOOK
   priority: must
-  status: agreed
+  status: verified
+  verified_by:
+    - tests/book/add-book-button.spec.js
   version: 1
   source: >-
     Client brief, sentence 3 (BRIEF.md): 'Add an "+ Add Book" button on the home
@@ -156,7 +160,10 @@
   title: Activating "+ Add Book" opens a modal form over the home page
   module: BOOK
   priority: must
-  status: agreed
+  status: verified
+  verified_by:
+    - tests/book/add-book-modal.spec.js
+    - tests/book/add-book-submission.spec.js
   version: 1
   source: >-
     Client brief, sentence 3 (BRIEF.md): 'button on the home page that opens a
@@ -189,7 +196,10 @@
   title: The modal form provides an input for each detail of the Book
   module: BOOK
   priority: must
-  status: agreed
+  status: verified
+  verified_by:
+    - tests/book/add-book-form-inputs.spec.js
+    - tests/book/book-validation.test.js
   version: 1
   source: >-
     Client brief, sentence 3 (BRIEF.md): "a popup/modal form where users can
@@ -239,7 +249,11 @@
   title: The modal form refuses a submission that fails validation
   module: BOOK
   priority: must
-  status: agreed
+  status: verified
+  verified_by:
+    - tests/book/add-book-validation.spec.js
+    - tests/book/book-validation.test.js
+    - tests/book/books-route.test.js
   version: 1
   source: >-
     Client brief, sentence 3 (BRIEF.md): "where users can enter the book
@@ -282,7 +296,11 @@
   title: Submitting the modal form adds exactly one Book to the Library
   module: BOOK
   priority: must
-  status: agreed
+  status: verified
+  verified_by:
+    - tests/book/add-book-submission.spec.js
+    - tests/book/book-store.test.js
+    - tests/book/books-route.test.js
   version: 1
   source: >-
     Client brief, sentence 4 (BRIEF.md): "After submitting the form, the new

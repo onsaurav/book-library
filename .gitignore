@@ -40,6 +40,13 @@ desktop.ini
 **/.next/**
 **/coverage/**
 **/playwright-report/**
+**/test-results/**
+
+# --- application data (this project) ---
+/data/*.sqlite
+/data/*.sqlite-journal
+/data/*.sqlite-wal
+/data/*.sqlite-shm
 
 # --- Python ---
 **/__pycache__/**

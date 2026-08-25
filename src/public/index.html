@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Book Library</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="page-header">
+    <h1>Book Library</h1>
+    <button type="button" id="add-book-button" class="button button-primary">+ Add Book</button>
+  </header>
+
+  <main>
+    <div id="gallery" class="gallery" aria-live="polite"></div>
+  </main>
+
+  <template id="empty-library-template">
+    <p class="empty-library">
+      The Library is empty.
+      <button type="button" class="link-button" data-action="open-add-book">Add your first Book</button>
+      to get started.
+    </p>
+  </template>
+
+  <template id="book-card-template">
+    <article class="book-card">
+      <p class="book-card-field book-card-id">Book ID: <span data-field="id"></span></p>
+      <h2 class="book-card-field book-card-name" data-field="name"></h2>
+      <p class="book-card-field book-card-author" data-field="author"></p>
+      <p class="book-card-field book-card-language" data-field="language"></p>
+      <p class="book-card-field book-card-price" data-field="price"></p>
+      <button type="button" class="button button-delete" data-action="delete-book">Delete</button>
+    </article>
+  </template>
+
+  <div id="add-book-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-action="close-modal"></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="add-book-modal-title">
+      <h2 id="add-book-modal-title">Add Book</h2>
+      <form id="add-book-form" novalidate>
+        <div class="form-field">
+          <label for="book-name">Name <span class="field-hint">(the book's title)</span></label>
+          <input type="text" id="book-name" name="name" autocomplete="off" />
+          <p class="form-error" data-error-for="name"></p>
+        </div>
+        <div class="form-field">
+          <label for="book-author">Author</label>
+          <input type="text" id="book-author" name="author" autocomplete="off" />
+          <p class="form-error" data-error-for="author"></p>
+        </div>
+        <div class="form-field">
+          <label for="book-language">Language</label>
+          <input type="text" id="book-language" name="language" autocomplete="off" />
+          <p class="form-error" data-error-for="language"></p>
+        </div>
+        <div class="form-field">
+          <label for="book-price">Price (BDT)</label>
+          <input type="text" id="book-price" name="price" inputmode="decimal" autocomplete="off" />
+          <p class="form-error" data-error-for="price"></p>
+        </div>
+        <p class="form-error form-error-general" data-error-for="general"></p>
+        <div class="form-actions">
+          <button type="button" class="button" data-action="close-modal">Cancel</button>
+          <button type="submit" class="button button-primary">Add Book</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/gallery.js"></script>
+  <script src="/modal.js"></script>
+  <script src="/addBookForm.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
