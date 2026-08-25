@@ -11,6 +11,7 @@ function tempDbPath() {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'book-store-test-')), 'library.sqlite');
 }
 
+// @covers REQ-BOOK-008@v1
 test('addBook assigns a numeric Book ID that the caller did not supply', () => {
   const store = createBookStore(tempDbPath());
   const book = store.addBook({ name: 'A', author: 'B', language: 'English', priceMinor: 100 });
