@@ -1,0 +1,604 @@
+# .brain/requirements/book.yaml
+#
+# Decomposed from the client brief recorded verbatim at
+# .brain/requirements/BRIEF.md (received Aug-25-2026 from KCB, Dhaka).
+#
+# Every requirement here is at status `draft` and version 1. None of them is
+# agreed: each carries open ambiguities, and an ambiguity is closed only by the
+# client answering it. See AMBIGUITIES.md, which is the same list in prose.
+#
+# Terms are used exactly as .brain/glossary.md spells them: Book, Library,
+# Book card, Book ID, Name, Author, Language, Price.
+
+- id: REQ-BOOK-001
+  title: The home page displays every Book in the Library as a gallery grid
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 2 (BRIEF.md): "The home page should display all books
+    in a clean and attractive gallery/grid layout"
+  rationale: >-
+    The gallery is the client's only stated view of the Library. If it shows a
+    subset, a user has no other way to discover that a Book exists.
+  acceptance:
+    - given: The Library holds three Books
+      when: The home page is opened
+      then: The page renders exactly three book cards
+    - given: The Library holds Books
+      when: The home page is rendered at a desktop-width viewport
+      then: More than one book card is displayed on the same row
+  ambiguities:
+    - What should the home page show when the Library holds no Books at all?
+    - In what order should the book cards appear in the gallery?
+    - >-
+      Is there an upper limit on how many Books the gallery shows at once, or
+      should every Book always be on the page?
+    - >-
+      What specifically makes the interface "modern", "clean and attractive" and
+      "user-friendly" — is there a reference site, brand, or design you want it
+      to look like?
+    - >-
+      Is the Library shared by everyone who opens the application, or does each
+      person have their own?
+
+- id: REQ-BOOK-002
+  title: Each book card displays the Book ID, Name, Author, Language and Price
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 2 (BRIEF.md): "with each book card showing the Book
+    ID, Name, Author, Language, and Price"
+  rationale: >-
+    The five fields the client named are the whole of what a user can see about
+    a Book; there is no detail view in the brief.
+  acceptance:
+    - given: A Book in the Library
+      when: The home page is opened
+      then: That Book's book card displays the Book's Book ID value
+    - given: A Book in the Library
+      when: The home page is opened
+      then: That Book's book card displays the Book's Name value
+    - given: A Book in the Library
+      when: The home page is opened
+      then: That Book's book card displays the Book's Author value
+    - given: A Book in the Library
+      when: The home page is opened
+      then: That Book's book card displays the Book's Language value
+    - given: A Book in the Library
+      when: The home page is opened
+      then: That Book's book card displays the Book's Price value
+  ambiguities:
+    - >-
+      Is the Book ID typed in by the person adding the Book, or produced by the
+      application itself?
+    - Is "Name" the title of the book, or something other than the title?
+    - >-
+      Is Language typed in freely, or chosen from a fixed list of languages you
+      will supply?
+    - >-
+      What currency is Price in, should it show decimal places, and is there a
+      lowest or highest allowed value?
+    - >-
+      What specifically makes the interface "modern", "clean and attractive" and
+      "user-friendly" — is there a reference site, brand, or design you want it
+      to look like?
+    - >-
+      Must Name and Author accept non-Latin scripts such as Bangla or Arabic, or
+      will they only ever be English text?
+  depends_on:
+    - REQ-BOOK-001
+
+- id: REQ-BOOK-003
+  title: Each book card carries a Delete control for that Book
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 2 (BRIEF.md): "along with a Delete option"; and
+    sentence 5: "Each book should have a Delete button to remove it from the
+    library"
+  rationale: >-
+    Deletion is the only correction path the brief describes; without a control
+    on the card there is no way to reach it.
+  acceptance:
+    - given: A Book in the Library
+      when: The home page is opened
+      then: That Book's book card displays a Delete control
+    - given: The Library holds three Books
+      when: The home page is opened
+      then: Three Delete controls are displayed, one on each book card
+  ambiguities:
+    - >-
+      Does the application need to be usable with a keyboard alone and with a
+      screen reader, or is mouse-and-sighted use enough?
+  depends_on:
+    - REQ-BOOK-001
+
+- id: REQ-BOOK-004
+  title: The home page carries a button labelled "+ Add Book"
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 3 (BRIEF.md): 'Add an "+ Add Book" button on the home
+    page'
+  rationale: >-
+    The client specified the control and its exact label; it is the single entry
+    point to adding a Book.
+  acceptance:
+    - given: The application is running
+      when: The home page is opened
+      then: A button whose visible label is "+ Add Book" is displayed
+    - given: The Library holds no Books
+      when: The home page is opened
+      then: The "+ Add Book" button is still displayed
+  ambiguities:
+    - What should the home page show when the Library holds no Books at all?
+
+- id: REQ-BOOK-005
+  title: Activating "+ Add Book" opens a modal form over the home page
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 3 (BRIEF.md): 'button on the home page that opens a
+    popup/modal form where users can enter the book details'
+  rationale: >-
+    The client asked for a popup specifically, not a separate page, so the
+    gallery stays in view while a Book is entered.
+  acceptance:
+    - given: The home page is open and no modal form is displayed
+      when: The "+ Add Book" button is activated
+      then: A modal form is displayed above the home page content
+    - given: The home page is open
+      when: The "+ Add Book" button is activated
+      then: The browser does not navigate away from the home page URL
+  ambiguities:
+    - >-
+      Should the modal form close by itself once a Book has been added
+      successfully?
+    - >-
+      Should the modal form have a way to cancel and close without adding a
+      Book, and if so, what should it be?
+    - >-
+      Does the application need to be usable with a keyboard alone and with a
+      screen reader, or is mouse-and-sighted use enough?
+  depends_on:
+    - REQ-BOOK-004
+
+- id: REQ-BOOK-006
+  title: The modal form provides an input for each detail of the Book
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 3 (BRIEF.md): "a popup/modal form where users can
+    enter the book details"
+  rationale: >-
+    A book card can only display a value that someone supplied; the fields the
+    card shows must therefore be enterable.
+  acceptance:
+    - given: The modal form is displayed
+      when: Its contents are inspected
+      then: It presents an input for the Book's Name
+    - given: The modal form is displayed
+      when: Its contents are inspected
+      then: It presents an input for the Book's Author
+    - given: The modal form is displayed
+      when: Its contents are inspected
+      then: It presents an input for the Book's Language
+    - given: The modal form is displayed
+      when: Its contents are inspected
+      then: It presents an input for the Book's Price
+    - given: The modal form is displayed
+      when: Its contents are inspected
+      then: It presents a control that submits the entered details
+  ambiguities:
+    - >-
+      Is the Book ID typed in by the person adding the Book, or produced by the
+      application itself?
+    - Is "Name" the title of the book, or something other than the title?
+    - >-
+      Is Language typed in freely, or chosen from a fixed list of languages you
+      will supply?
+    - >-
+      What currency is Price in, should it show decimal places, and is there a
+      lowest or highest allowed value?
+    - >-
+      Which of Name, Author, Language and Price must be filled in before a Book
+      can be added, and which may be left blank?
+    - >-
+      Must Name and Author accept non-Latin scripts such as Bangla or Arabic, or
+      will they only ever be English text?
+  depends_on:
+    - REQ-BOOK-005
+
+- id: REQ-BOOK-007
+  title: The modal form refuses a submission that fails validation
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 3 (BRIEF.md): "where users can enter the book
+    details" — read together with sentence 2, which requires every named field
+    to be shown on the book card
+  rationale: >-
+    A book card that displays a blank or nonsensical field is the visible cost
+    of accepting an invalid submission; the gallery has no other place to hide
+    bad data.
+  acceptance:
+    - given: The modal form is displayed with a required field left empty
+      when: The form is submitted
+      then: No Book is added to the Library
+    - given: The modal form is displayed with a required field left empty
+      when: The form is submitted
+      then: The form displays a message naming the field that is at fault
+    - given: The modal form is displayed with a Price that is not a valid number
+      when: The form is submitted
+      then: No Book is added to the Library
+  ambiguities:
+    - >-
+      Which of Name, Author, Language and Price must be filled in before a Book
+      can be added, and which may be left blank?
+    - >-
+      Is Language typed in freely, or chosen from a fixed list of languages you
+      will supply?
+    - >-
+      What currency is Price in, should it show decimal places, and is there a
+      lowest or highest allowed value?
+    - >-
+      Should the details be checked only in the browser, or checked again by the
+      application before the Book is stored?
+    - >-
+      What should the user see when adding or deleting a Book fails
+      unexpectedly?
+  depends_on:
+    - REQ-BOOK-006
+
+- id: REQ-BOOK-008
+  title: Submitting the modal form adds exactly one Book to the Library
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 4 (BRIEF.md): "After submitting the form, the new
+    book should be added to the library"
+  rationale: >-
+    Adding a Book is the only way the Library grows; nothing else in the brief
+    creates one.
+  acceptance:
+    - given: The modal form is completed with details that pass validation
+      when: The form is submitted
+      then: The Library holds exactly one more Book than it held before
+    - given: The modal form is completed with details that pass validation
+      when: The form is submitted
+      then: The stored Book's Name equals the value entered in the Name input
+    - given: The modal form is completed with details that pass validation
+      when: The form is submitted
+      then: The stored Book's Author equals the value entered in the Author input
+    - given: The modal form is completed with details that pass validation
+      when: The form is submitted
+      then: The stored Book's Language equals the value entered in the Language input
+    - given: The modal form is completed with details that pass validation
+      when: The form is submitted
+      then: The stored Book's Price equals the value entered in the Price input
+  ambiguities:
+    - >-
+      Is the Book ID typed in by the person adding the Book, or produced by the
+      application itself?
+    - >-
+      May two Books with the same Name and Author both exist in the Library, or
+      should the second one be refused?
+    - >-
+      Does the data store live on the Node.js server, or in the user's own
+      browser?
+    - >-
+      Is the Library shared by everyone who opens the application, or does each
+      person have their own?
+    - >-
+      What should the user see when adding or deleting a Book fails
+      unexpectedly?
+    - >-
+      If two people add or delete Books at the same moment, what should happen?
+    - >-
+      Should the details be checked only in the browser, or checked again by the
+      application before the Book is stored?
+    - >-
+      Must Name and Author accept non-Latin scripts such as Bangla or Arabic, or
+      will they only ever be English text?
+    - >-
+      Should a Book's details be editable after it has been added, or is the
+      only correction to delete it and add it again?
+  depends_on:
+    - REQ-BOOK-006
+    - REQ-BOOK-012
+
+- id: REQ-BOOK-009
+  title: A newly added Book appears in the gallery without a manual page reload
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 4 (BRIEF.md): "the new book should be added to the
+    library and immediately displayed in the gallery"
+  rationale: >-
+    The client called out "immediately" specifically, which distinguishes this
+    from a Book that only shows up the next time the page is loaded.
+  acceptance:
+    - given: The modal form has been submitted with details that pass validation
+      when: The submission completes
+      then: A book card for the new Book is visible in the gallery without the user reloading the page
+    - given: The Library held two Books before submission
+      when: The submission completes
+      then: The gallery displays three book cards
+  ambiguities:
+    - >-
+      Should the modal form close by itself once a Book has been added
+      successfully?
+  depends_on:
+    - REQ-BOOK-008
+    - REQ-BOOK-001
+
+- id: REQ-BOOK-010
+  title: Activating a book card's Delete control removes that Book from the Library
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 5 (BRIEF.md): "Each book should have a Delete button
+    to remove it from the library"
+  rationale: >-
+    Deletion is the only way the client described for the Library to shrink.
+  acceptance:
+    - given: The Library holds three Books
+      when: The delete of one named Book completes
+      then: The Library holds two Books
+    - given: The Library holds three Books
+      when: The delete of one named Book completes
+      then: The Library no longer holds a Book with that Book's Book ID
+    - given: The Library holds three Books
+      when: The delete of one named Book completes
+      then: The other two Books are still present with their field values unchanged
+  ambiguities:
+    - >-
+      Is a deleted Book gone permanently, or should it be recoverable, and by
+      whom?
+    - >-
+      Should the user be asked to confirm before a Book is deleted, or should
+      the Delete button remove it straight away?
+    - >-
+      May a deleted Book's Book ID be given to a later Book, or is it used up
+      forever?
+    - >-
+      Is the Library shared by everyone who opens the application, or does each
+      person have their own?
+    - >-
+      What should the user see when adding or deleting a Book fails
+      unexpectedly?
+    - >-
+      If two people add or delete Books at the same moment, what should happen?
+  depends_on:
+    - REQ-BOOK-003
+    - REQ-BOOK-012
+    - REQ-BOOK-017
+
+- id: REQ-BOOK-011
+  title: A deleted Book's card disappears from the gallery without a manual reload
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 5 (BRIEF.md): "a Delete button to remove it from the
+    library", read with sentence 2, which requires the gallery to display all
+    books
+  rationale: >-
+    A card left on screen for a Book that no longer exists is indistinguishable
+    from a failed delete, and the user's next action would be to press Delete
+    again.
+  acceptance:
+    - given: The gallery displays three book cards
+      when: The delete of one named Book completes
+      then: The gallery displays two book cards without the user reloading the page
+    - given: The gallery displays three book cards
+      when: The delete of one named Book completes
+      then: No book card showing that Book's Book ID remains on the page
+  ambiguities:
+    - >-
+      Should the user be asked to confirm before a Book is deleted, or should
+      the Delete button remove it straight away?
+    - What should the home page show when the Library holds no Books at all?
+  depends_on:
+    - REQ-BOOK-010
+    - REQ-BOOK-001
+
+- id: REQ-BOOK-012
+  title: The Library is held in a data store the application reads and writes
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 6 (BRIEF.md): "The application should be simple,
+    responsive, easy to run on a local development PC, use a simple data store"
+  rationale: >-
+    Every other requirement assumes there is one Library that adding and
+    deleting act upon; the store is what makes it one.
+  acceptance:
+    - given: The application is running
+      when: A Book is added through the modal form
+      then: That Book is present in the application's data store
+    - given: A Book has been added
+      when: The home page is opened again in a second browser tab
+      then: A book card for that Book is displayed in the gallery
+    - given: A Book has been deleted
+      when: The home page is opened again in a second browser tab
+      then: No book card for that Book is displayed in the gallery
+  ambiguities:
+    - >-
+      Does the data store live on the Node.js server, or in the user's own
+      browser?
+    - >-
+      Must Books still be there after the application is stopped and started
+      again, or is losing them on restart acceptable?
+    - >-
+      Is the Library shared by everyone who opens the application, or does each
+      person have their own?
+    - >-
+      If two people add or delete Books at the same moment, what should happen?
+    - >-
+      Should a Book's details be editable after it has been added, or is the
+      only correction to delete it and add it again?
+
+- id: REQ-BOOK-013
+  title: The gallery and the modal form adapt to the width of the viewport
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 6 (BRIEF.md): "The application should be simple,
+    responsive, easy to run on a local development PC"
+  rationale: >-
+    The client named responsiveness explicitly as a property of the delivered
+    application.
+  acceptance:
+    - given: The home page displays book cards
+      when: The viewport is narrowed to a phone-width viewport
+      then: Every field on each book card is readable without horizontal scrolling of the page
+    - given: The home page displays book cards
+      when: The viewport is widened to a desktop-width viewport
+      then: More than one book card is displayed on the same row
+    - given: The modal form is displayed
+      when: The viewport is narrowed to a phone-width viewport
+      then: Every input and the submit control remain reachable without horizontal scrolling
+  ambiguities:
+    - >-
+      Which screen widths or devices must the application work on, and what is
+      the narrowest one that must be supported?
+    - >-
+      What specifically makes the interface "modern", "clean and attractive" and
+      "user-friendly" — is there a reference site, brand, or design you want it
+      to look like?
+    - >-
+      Does the application need to be usable with a keyboard alone and with a
+      screen reader, or is mouse-and-sighted use enough?
+  depends_on:
+    - REQ-BOOK-001
+
+- id: REQ-BOOK-014
+  title: The application starts on a local development PC from a documented command
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 6 (BRIEF.md): "easy to run on a local development PC"
+  rationale: >-
+    The client's stated deployment target is a developer's own machine, so the
+    cost of getting it running is part of what was asked for.
+  acceptance:
+    - given: A clean clone of the repository on a machine with Node.js installed
+      when: The documented start command is run
+      then: The application serves the home page at the documented local address with a success response
+    - given: A clean clone of the repository
+      when: The documented setup steps are followed
+      then: No step requires an external service that those steps do not install
+  ambiguities:
+    - >-
+      Which Node.js version, which web framework (if any), which port, and
+      should there be a build step before the application runs?
+  depends_on:
+    - REQ-BOOK-016
+
+- id: REQ-BOOK-015
+  title: The application takes no runtime dependency outside the accepted list
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 6 (BRIEF.md): "avoid unnecessary dependencies"
+  rationale: >-
+    Each third-party package is something the client will carry, update and
+    audit after handover.
+  acceptance:
+    - given: The project's package manifest
+      when: Its production dependency list is compared with the list of dependencies the client has accepted
+      then: The two lists are identical
+    - given: A clean clone of the repository
+      when: The application is started with no network access after install
+      then: The home page is served with a success response
+  ambiguities:
+    - >-
+      Does "avoid unnecessary dependencies" mean no third-party runtime packages
+      at all, or a small set you would approve one by one?
+    - >-
+      Do development and testing tools count as dependencies for this purpose,
+      or only what ships at runtime?
+
+- id: REQ-BOOK-016
+  title: The application runs on the Node.js runtime and requires no other
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 1 (BRIEF.md): "Create a simple and modern Book
+    Library application using Node.js"
+  rationale: >-
+    The client named the platform, which fixes what a developer must have
+    installed and what the client's own team will maintain.
+  acceptance:
+    - given: A machine with Node.js installed and no other language runtime
+      when: The documented start command is run
+      then: The application starts and serves the home page with a success response
+    - given: The repository as delivered
+      when: Its source files are inspected
+      then: No source file requires a runtime other than Node.js to execute
+  ambiguities:
+    - >-
+      Which Node.js version, which web framework (if any), which port, and
+      should there be a build step before the application runs?
+
+- id: REQ-BOOK-017
+  title: Every Book carries a Book ID that tells it apart from every other Book
+  module: BOOK
+  priority: must
+  status: draft
+  version: 1
+  source: >-
+    Client brief, sentence 2 (BRIEF.md), which names "Book ID" as a book card
+    field; and .brain/glossary.md, "Book — Identified by: its Book ID"
+  rationale: >-
+    Deleting one Book and leaving the rest alone is only possible if something
+    tells two Books apart. The Book ID is the only candidate the brief offers.
+  acceptance:
+    - given: Two Books in the Library
+      when: Their Book ID values are compared
+      then: The two values differ
+    - given: A Library holding three Books
+      when: A delete is requested for one Book ID
+      then: Only the Book carrying that Book ID is removed
+  ambiguities:
+    - >-
+      Is the Book ID typed in by the person adding the Book, or produced by the
+      application itself?
+    - >-
+      What should a Book ID look like — a number, a code you supply, an ISBN, or
+      something else?
+    - >-
+      May a deleted Book's Book ID be given to a later Book, or is it used up
+      forever?

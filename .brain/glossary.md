@@ -49,14 +49,17 @@ they diverge, that divergence is itself worth writing down.
 
 ## Agreed terms
 
-**Engagement** — a single piece of contracted work for one customer, from
-acceptance through to invoicing.
-- **Not to be confused with:** a *Visit*. One Engagement may need several Visits.
-- **Also called:** the client says "job" in operations and "booking" in the
-  customer app. Both mean Engagement. Neither word appears in our code.
-- **Identified by:** its Engagement reference, issued at acceptance.
+**Book** — a single entry in the Library, as entered by a user through the
+Add Book form. Shown on a book card in the gallery.
+- **Identified by:** its Book ID.
+- Carries five fields named explicitly in the brief: Book ID, Name, Author,
+  Language, Price.
 
-_Replace the example above with this project's real terms. Delete this line._
+**Library** — the full collection of Books, shown on the home page as a
+gallery/grid of book cards.
+
+**Book card** — the gallery tile for one Book, showing its Book ID, Name,
+Author, Language and Price, plus a Delete option.
 
 ---
 
@@ -66,4 +69,15 @@ List terms the client has used without settling what they mean. Being listed her
 makes clear their absence is known, not overlooked. Each one should have a
 matching question in `requirements/AMBIGUITIES.md`.
 
-- _(none yet)_
+- **Book ID** — not stated whether it is system-generated (and how) or entered
+  by the user. The brief lists it as a card field but not as an Add Book form
+  field.
+- **Name** — not stated whether this is the book's title, or something else
+  (e.g. distinct from a "Title" field).
+- **Language** — not stated whether this is a free-text field, or a
+  constrained list of values.
+- **Price** — no currency specified, and no statement of whether decimals or
+  a minimum/maximum are expected.
+- **Simple data store** — not stated what counts as "simple" (in-memory,
+  flat file, embedded database) or whether data must survive a server
+  restart.
