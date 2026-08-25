@@ -361,7 +361,9 @@
   title: A newly added Book appears in the gallery without a manual page reload
   module: BOOK
   priority: must
-  status: agreed
+  status: verified
+  verified_by:
+    - tests/book/add-book-submission.spec.js
   version: 1
   source: >-
     Client brief, sentence 4 (BRIEF.md): "the new book should be added to the

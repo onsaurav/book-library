@@ -24,7 +24,14 @@ function startTestServer() {
         store,
         async close() {
           store.close();
-          await new Promise((res) => app.close(res));
+          await new Promise((res) => {
+            app.close(res);
+            // A still-open keep-alive connection (e.g. a Playwright page that
+            // hasn't navigated away yet) would otherwise make close() hang
+            // forever: http.Server.close() only stops accepting new
+            // connections, it does not close existing ones.
+            app.closeAllConnections();
+          });
         },
       });
     });
